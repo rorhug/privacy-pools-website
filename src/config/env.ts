@@ -8,6 +8,8 @@ const env: Env = {
   TEST_MODE: process.env.NEXT_PUBLIC_TEST_MODE === 'true',
   SHOW_DISCLAIMER: process.env.NEXT_PUBLIC_SHOW_DISCLAIMER === 'true',
   IS_TESTNET: process.env.NEXT_PUBLIC_IS_TESTNET === 'true',
+  GITHUB_HASH: process.env.NEXT_PUBLIC_GITHUB_HASH as string,
+  HYPERSYNC_KEY: process.env.NEXT_PUBLIC_HYPERSYNC_KEY as string,
 };
 
 export const getServerEnv = () => {
