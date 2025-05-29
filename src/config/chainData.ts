@@ -3,7 +3,7 @@ import { Chain, mainnet, sepolia } from 'viem/chains';
 import { getEnv } from '~/config/env';
 import mainnetIcon from '~/assets/icons/mainnet.svg';
 
-const { ALCHEMY_KEY, IS_TESTNET, ASP_ENDPOINT } = getEnv();
+const { ALCHEMY_KEY, IS_TESTNET, ASP_ENDPOINT, HYPERSYNC_KEY } = getEnv();
 
 // Add chains to the whitelist to be used in the app
 const mainnetChains: readonly [Chain, ...Chain[]] = [mainnet];
@@ -52,7 +52,7 @@ const mainnetChainData: ChainData = {
     image: mainnetIcon.src,
     explorerUrl: mainnet.blockExplorers.default.url,
     relayers: [{ name: 'Freedom Relay', url: 'https://www.freedomrelay.io' }],
-    sdkRpcUrl: 'https://eth.rpc.hypersync.xyz/',
+    sdkRpcUrl: `https://eth.rpc.hypersync.xyz/${HYPERSYNC_KEY}`,
     rpcUrl: `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
     aspUrl: ASP_ENDPOINT,
     poolInfo: [
@@ -90,9 +90,8 @@ const testnetChainData: ChainData = {
     decimals: sepolia.nativeCurrency.decimals,
     image: mainnetIcon.src,
     explorerUrl: sepolia.blockExplorers.default.url,
-    // rpcUrl: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}`,
-    sdkRpcUrl: 'https://sepolia.rpc.hypersync.xyz/',
-    rpcUrl: `https://ethereum-sepolia-rpc.publicnode.com/`,
+    sdkRpcUrl: `https://sepolia.rpc.hypersync.xyz/${HYPERSYNC_KEY}`,
+    rpcUrl: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}`,
     aspUrl: ASP_ENDPOINT,
     relayers: [
       { name: 'Testnet Relay', url: 'https://testnet-relayer.privacypools.com' },
