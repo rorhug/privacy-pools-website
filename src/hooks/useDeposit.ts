@@ -86,38 +86,40 @@ export const useDeposit = () => {
         let hash: ViemHash;
 
         if (selectedPoolInfo.asset === DEFAULT_ASSET) {
-          const { request } = await publicClient.simulateContract({
-            account: address,
-            address: getAddress(selectedPoolInfo.entryPointAddress),
-            abi: entrypointAbi,
-            functionName: 'deposit',
-            args: [precommitmentHash],
-            value,
-           })
-          .catch((err) => {
-            if (err?.metaMessages[0] == 'Error: PrecommitmentAlreadyUsed()') {
-              throw new Error('Precommitment already used');
-            }
-            throw err;
-          });;
+          const { request } = await publicClient
+            .simulateContract({
+              account: address,
+              address: getAddress(selectedPoolInfo.entryPointAddress),
+              abi: entrypointAbi,
+              functionName: 'deposit',
+              args: [precommitmentHash],
+              value,
+            })
+            .catch((err) => {
+              if (err?.metaMessages[0] == 'Error: PrecommitmentAlreadyUsed()') {
+                throw new Error('Precommitment already used');
+              }
+              throw err;
+            });
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { account: _account, ...restRequest } = request;
           hash = await walletClient.writeContract(restRequest);
         } else {
           if (!selectedPoolInfo.assetAddress) throw new Error('Asset address missing for token deposit');
-          const { request } = await publicClient.simulateContract({
-            account: address,
-            address: getAddress(selectedPoolInfo.entryPointAddress),
-            abi: entrypointAbi,
-            functionName: 'deposit',
-            args: [selectedPoolInfo.assetAddress, value, precommitmentHash],
-           })
-           .catch((err) => {
-            if (err?.metaMessages[0] == 'Error: PrecommitmentAlreadyUsed()') {
-              throw new Error('Precommitment already used');
-            }
-            throw err;
-          });;
+          const { request } = await publicClient
+            .simulateContract({
+              account: address,
+              address: getAddress(selectedPoolInfo.entryPointAddress),
+              abi: entrypointAbi,
+              functionName: 'deposit',
+              args: [selectedPoolInfo.assetAddress, value, precommitmentHash],
+            })
+            .catch((err) => {
+              if (err?.metaMessages[0] == 'Error: PrecommitmentAlreadyUsed()') {
+                throw new Error('Precommitment already used');
+              }
+              throw err;
+            });
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { account: _account, ...restRequest } = request;
           hash = await walletClient.writeContract(restRequest);
