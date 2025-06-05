@@ -67,17 +67,6 @@ const mainnetChainData: ChainData = {
         asset: 'ETH',
         assetDecimals: 18,
       },
-      {
-        chainId: mainnet.id,
-        address: '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB',
-        assetAddress: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
-        scope: 4916574638117198869413701114161172350986437430914933850166949084132905299523n,
-        deploymentBlock: 22153707n,
-        entryPointAddress: '0x6818809EefCe719E480a7526D76bD3e561526b46',
-        maxDeposit: parseUnits('100', 6),
-        asset: 'USDC',
-        assetDecimals: 6,
-      },
     ],
   },
 };

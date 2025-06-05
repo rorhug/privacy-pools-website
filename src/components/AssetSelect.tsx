@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { FormControl, MenuItem, Select, styled, SelectChangeEvent } from '@mui/material';
 import { ChainAssets } from '~/config';
 import { useChainContext } from '~/hooks/context/useChainContext';
@@ -12,7 +12,7 @@ export interface Option {
   icon?: React.ReactNode;
 }
 
-const DEFAULT_TOKEN_OPTIONS: Option[] = [
+const ALL_TOKEN_OPTIONS: Option[] = [
   { value: 'ETH', label: 'ETH', icon: <EtherIcon /> },
   { value: 'USDC', label: 'USDC' },
 ];
@@ -27,13 +27,18 @@ const MENU_STYLING = {
   },
 };
 
-export interface AssetSelectProps {
-  value?: string;
-  options?: Option[];
-}
+export const AssetSelect: React.FC = () => {
+  const { selectedAsset, setSelectedAsset, chain } = useChainContext();
 
-export const AssetSelect: React.FC<AssetSelectProps> = ({ options = DEFAULT_TOKEN_OPTIONS }) => {
-  const { selectedAsset, setSelectedAsset } = useChainContext();
+  const supportedAssets = useMemo(() => {
+    return [...new Set(chain.poolInfo.map((pool) => pool.asset))];
+  }, [chain.poolInfo]);
+
+  const filteredTokenOptions = useMemo(() => {
+    return ALL_TOKEN_OPTIONS.filter((option) => supportedAssets.includes(option.value));
+  }, [supportedAssets]);
+
+  const tokenOptions = filteredTokenOptions;
 
   const handleChange = (event: SelectChangeEvent<unknown>) => {
     setSelectedAsset(event.target.value as ChainAssets);
@@ -42,7 +47,7 @@ export const AssetSelect: React.FC<AssetSelectProps> = ({ options = DEFAULT_TOKE
   return (
     <FormControl fullWidth>
       <StyledSelect value={selectedAsset} onChange={handleChange} variant='outlined' MenuProps={MENU_STYLING}>
-        {options?.map((option) => (
+        {tokenOptions?.map((option) => (
           <MenuItem key={option.value} value={option.value}>
             <MenuItemContent>
               {option.icon && <IconWrapper>{option.icon}</IconWrapper>}
