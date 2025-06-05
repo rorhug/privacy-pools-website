@@ -52,6 +52,7 @@ export const SeedPhraseForm = ({
 
       setSplitSeedPhrase([]); // reset this state to avoid infinite loop
       setSeedPhrase(cleanedText);
+      setIsHidden(true);
     });
   }, [seedPhrase, setSeedPhrase]);
 
@@ -99,6 +100,12 @@ export const SeedPhraseForm = ({
     }
   }, [seedPhrase]);
 
+  useEffect(() => {
+    if (type === 'load') {
+      setIsHidden(false);
+    }
+  }, [type]);
+
   return (
     <>
       <Stack
@@ -113,7 +120,7 @@ export const SeedPhraseForm = ({
               <Grid2 size={{ xs: 6, md: 4 }} key={key + index}>
                 <FormControl variant='outlined' fullWidth>
                   <OutlinedInput
-                    type={isHidden && type === 'create' ? 'password' : 'text'}
+                    type={isHidden ? 'password' : 'text'}
                     value={splitSeedPhrase[index] ?? ''}
                     onChange={(e) => changeSeedPhraseWord(e.target.value, index)}
                     onKeyDown={handleKeyDown}
@@ -123,7 +130,7 @@ export const SeedPhraseForm = ({
               </Grid2>
             ))}
           </Grid2>
-          {type === 'create' && <CoverSeedPhrase isHidden={isHidden} setIsHidden={setIsHidden} />}
+          {(type === 'create' || isHidden) && <CoverSeedPhrase isHidden={isHidden} setIsHidden={setIsHidden} />}
         </Box>
       </Stack>
       {type === 'create' && (

@@ -64,6 +64,7 @@ export const useDeposit = () => {
 
       if (!TEST_MODE) {
         if (!walletClient || !publicClient) throw new Error('Wallet or Public client not found');
+
         if (!selectedPoolInfo.scope || !precommitmentHash || !value)
           throw new Error('Missing required data to deposit');
 
