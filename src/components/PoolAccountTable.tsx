@@ -86,6 +86,7 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
       timestamp: poolAccount.deposit.timestamp ? parseInt(poolAccount.deposit.timestamp.toString()) : 0,
       reviewStatus: poolAccount.reviewStatus,
       label: poolAccount.label,
+      scope: poolAccount.scope,
     });
     setPoolAccount(foundAccount);
     setModalOpen(ModalType.PA_DETAILS);
