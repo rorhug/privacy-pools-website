@@ -66,8 +66,8 @@ export const WithdrawForm = () => {
 
   // Cache key for minimum withdrawal amount
   const cacheKey = useMemo(() => {
-    return `${chainId}-${selectedPoolInfo?.assetAddress}`;
-  }, [chainId, selectedPoolInfo?.assetAddress]);
+    return `${chainId}-${selectedPoolInfo?.assetAddress}-${selectedRelayer?.url}`;
+  }, [chainId, selectedPoolInfo?.assetAddress, selectedRelayer?.url]);
 
   // Calculate remaining balance after withdrawal
   const remainingBalance = useMemo(() => {
