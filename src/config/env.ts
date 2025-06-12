@@ -11,6 +11,7 @@ const env: Env = {
   GITHUB_HASH: process.env.NEXT_PUBLIC_GITHUB_HASH as string,
   HYPERSYNC_KEY: process.env.NEXT_PUBLIC_HYPERSYNC_KEY as string,
   SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN as string,
+  SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN as string,
 };
 
 export const getServerEnv = () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { ChangeEvent, FocusEventHandler, useCallback, useMemo, useState } from 'react';
+import { ChangeEvent, FocusEventHandler, useCallback, useMemo, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Box, Button, CircularProgress, FormControl, SelectChangeEvent, Stack, styled, TextField } from '@mui/material';
 import { Address, formatUnits, getAddress, isAddress, parseUnits } from 'viem';
@@ -15,13 +15,15 @@ import {
   useRequestQuote,
 } from '~/hooks';
 import { ModalType } from '~/types';
-import { getUsdBalance } from '~/utils';
+import { getUsdBalance, relayerClient } from '~/utils';
 import { LinksSection } from '../LinksSection';
 import { AmountInputSection } from './AmountInputSection';
 import { PoolAccountSelectorSection } from './PoolAccountSelectorSection';
 import { RelayerSelectorSection } from './RelayerSelectorSection';
 
 const BPS_DIVISOR = 10000n;
+
+const minWithdrawCache = new Map<string, string>();
 
 export const WithdrawForm = () => {
   const { setModalOpen } = useModal();
@@ -44,9 +46,11 @@ export const WithdrawForm = () => {
   const { poolAccounts } = useAccountContext();
 
   const decimals = selectedPoolInfo?.assetDecimals ?? balanceDecimals ?? 18;
-
   const filteredPoolAccounts = poolAccounts.filter((pa) => pa.balance > 0n);
 
+  // New state for minimum withdrawal amount and warning
+  const [minWithdrawAmount, setMinWithdrawAmount] = useState<bigint | null>(null);
+  const [isLoadingMinAmount, setIsLoadingMinAmount] = useState(false);
   const [targetAddressHasError, setTargetAddressHasError] = useState(false);
 
   const balanceFormatted = formatUnits(poolAccount?.balance ?? BigInt(0), decimals);
@@ -59,6 +63,69 @@ export const WithdrawForm = () => {
       return 0n;
     }
   }, [amount, decimals]);
+
+  // Cache key for minimum withdrawal amount
+  const cacheKey = useMemo(() => {
+    return `${chainId}-${selectedPoolInfo?.assetAddress}-${selectedRelayer?.url}`;
+  }, [chainId, selectedPoolInfo?.assetAddress, selectedRelayer?.url]);
+
+  // Calculate remaining balance after withdrawal
+  const remainingBalance = useMemo(() => {
+    if (!poolAccount?.balance || amountBN <= 0n) return null;
+    return poolAccount.balance - amountBN;
+  }, [poolAccount?.balance, amountBN]);
+
+  // Check if withdrawal would leave insufficient remaining balance
+  const shouldShowMinAmountWarning = useMemo(() => {
+    if (!minWithdrawAmount || !remainingBalance || remainingBalance <= 0n) return false;
+    return remainingBalance > 0n && remainingBalance < minWithdrawAmount;
+  }, [minWithdrawAmount, remainingBalance]);
+
+  // Format minimum withdrawal amount for display
+  const minWithdrawFormatted = useMemo(() => {
+    if (!minWithdrawAmount) return '';
+    return formatUnits(minWithdrawAmount, decimals);
+  }, [minWithdrawAmount, decimals]);
+
+  const remainingBalanceFormatted = useMemo(() => {
+    if (!remainingBalance) return '';
+    return formatUnits(remainingBalance, decimals);
+  }, [remainingBalance, decimals]);
+
+  // Fetch minimum withdrawal amount
+  const fetchMinWithdrawAmount = useCallback(async () => {
+    if (!selectedPoolInfo?.assetAddress || !selectedRelayer?.url) return;
+
+    // Check cache first
+    const cachedValue = minWithdrawCache.get(cacheKey);
+    if (cachedValue) {
+      setMinWithdrawAmount(BigInt(cachedValue));
+      return;
+    }
+
+    setIsLoadingMinAmount(true);
+    try {
+      const response = await relayerClient.fetchFees(selectedRelayer.url, chainId, selectedPoolInfo.assetAddress);
+
+      const minAmount = BigInt(response.minWithdrawAmount);
+      setMinWithdrawAmount(minAmount);
+
+      // Cache the value
+      minWithdrawCache.set(cacheKey, response.minWithdrawAmount);
+    } catch (error) {
+      console.error('Failed to fetch minimum withdrawal amount:', error);
+      addNotification('error', 'Failed to fetch minimum withdrawal requirements');
+    } finally {
+      setIsLoadingMinAmount(false);
+    }
+  }, [selectedPoolInfo?.assetAddress, selectedRelayer?.url, chainId, cacheKey, addNotification]);
+
+  // Fetch min amount when user starts entering amount or clicks max
+  useEffect(() => {
+    if (amount && !minWithdrawAmount && !isLoadingMinAmount) {
+      fetchMinWithdrawAmount();
+    }
+  }, [amount, fetchMinWithdrawAmount, minWithdrawAmount, isLoadingMinAmount]);
 
   const isValidAmount = useMemo(() => {
     return amountBN > 0n && amountBN <= (poolAccount?.balance ?? 0n);
@@ -112,16 +179,47 @@ export const WithdrawForm = () => {
     if (amount && amountBN <= 0n) return 'Withdrawal amount must be greater than 0';
     if (amount && !isValidAmount && amountBN > (poolAccount?.balance ?? 0n))
       return `Maximum withdraw amount is ${formatUnits(poolAccount?.balance ?? 0n, decimals)} ${symbol}`;
+
+    // Show minimum withdrawal warning
+    if (shouldShowMinAmountWarning && minWithdrawFormatted) {
+      return (
+        <>
+          Warning: After withdrawal, remaining balance (${remainingBalanceFormatted} ${symbol}) will be below minimum
+          withdrawal amount (${minWithdrawFormatted} ${symbol}). You can either:
+          <ul>
+            <li>Withdraw less</li>
+            <li>Use &quot;Max&quot; to withdraw all</li>
+            <li>Proceed and exit the rest later to your original deposit address (compromises privacy)</li>
+          </ul>
+        </>
+      );
+    }
+
     return '';
-  }, [amount, amountBN, isValidAmount, poolAccount?.balance, symbol, decimals]);
+  }, [
+    amount,
+    amountBN,
+    isValidAmount,
+    poolAccount?.balance,
+    symbol,
+    decimals,
+    shouldShowMinAmountWarning,
+    minWithdrawFormatted,
+    remainingBalanceFormatted,
+  ]);
 
   const handleAmountChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setAmount(
-      e.target.value
-        .replace(/[^0-9.]+/g, '')
-        .replace(/(\..*)\..*/g, '$1')
-        .slice(0, 20),
-    );
+    const newAmount = e.target.value
+      .replace(/[^0-9.]+/g, '')
+      .replace(/(\..*)\..*/g, '$1')
+      .slice(0, 20);
+
+    setAmount(newAmount);
+
+    // Fetch min amount when user starts typing
+    if (newAmount && !minWithdrawAmount && !isLoadingMinAmount) {
+      fetchMinWithdrawAmount();
+    }
   };
 
   const handlePoolAccountChange = (e: SelectChangeEvent<unknown>) => {
@@ -254,10 +352,10 @@ export const WithdrawForm = () => {
         onClick={handleWithdraw}
         data-testid='confirm-withdrawal-button'
         sx={{ zIndex: 2 }}
-        startIcon={isQuoteLoading ? <CircularProgress size={16} color='inherit' /> : null}
+        startIcon={isQuoteLoading || isLoadingMinAmount ? <CircularProgress size={16} color='inherit' /> : null}
       >
-        {isQuoteLoading && 'Getting Quote...'}
-        {!isQuoteLoading && 'Withdraw'}
+        {(isQuoteLoading || isLoadingMinAmount) && 'Getting Quote...'}
+        {!isQuoteLoading && !isLoadingMinAmount && 'Withdraw'}
       </Button>
 
       <LinksSection />
@@ -277,3 +375,4 @@ const DecorativeCircle = styled(Box)(() => {
     top: '84%',
   };
 });
+// (moved above)

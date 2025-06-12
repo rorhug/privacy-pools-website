@@ -40,6 +40,10 @@ export interface RelayRequestBody {
 export type FeesResponse = {
   feeBPS: string;
   feeReceiverAddress: string;
+  chainId: number;
+  assetAddress: string;
+  minWithdrawAmount: string;
+  maxGasPrice: string;
 };
 
 /**
