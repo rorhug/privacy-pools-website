@@ -12,6 +12,7 @@ export interface Env {
   GITHUB_HASH: string;
   HYPERSYNC_KEY: string;
   SENTRY_DSN: string;
+  SENTRY_AUTH_TOKEN: string;
 }
 
 export interface Constants {
