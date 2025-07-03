@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, MouseEvent } from 'react';
+import { useState, MouseEvent, useEffect, useMemo } from 'react';
 import { OverflowMenuVertical } from '@carbon/icons-react';
 import {
   styled,
@@ -16,7 +16,7 @@ import {
   Typography,
   Box,
 } from '@mui/material';
-import { formatEther } from 'viem';
+import { formatUnits } from 'viem';
 import { useAccount } from 'wagmi';
 import { DottedMenu, ExtendedTooltip as Tooltip, StatusChip } from '~/components';
 import { getConstants } from '~/config/constants';
@@ -28,7 +28,7 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
   const { PENDING_STATUS_MESSAGE: statusMessage } = getConstants();
   const { setActionType, setPoolAccount, setAmount, setTarget } = usePoolAccountsContext();
   const {
-    chain: { decimals, symbol },
+    balanceBN: { symbol, decimals },
   } = useChainContext();
   const { address } = useAccount();
   const { setModalOpen } = useModal();
@@ -37,6 +37,14 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
 
   const theme = useTheme();
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
+
+  const { setSelectedHistoryData } = usePoolAccountsContext();
+
+  useEffect(() => {
+    if (isLoading || !records.length) {
+      setAnchorEl([]);
+    }
+  }, [isLoading, records.length]);
 
   const handleToggle = (event: MouseEvent<HTMLElement>, index: number) => {
     const newAnchorEl = Array(poolAccounts.length).fill(null);
@@ -61,7 +69,7 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
 
     setTarget(address);
     setPoolAccount(foundAccount);
-    setAmount(formatEther(poolAccount.balance));
+    setAmount(formatUnits(poolAccount.balance, decimals));
     setActionType(EventType.EXIT);
     setModalOpen(ModalType.GENERATE_ZK_PROOF);
     handleClose();
@@ -71,6 +79,15 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
     const foundAccount = poolAccounts.find((pa) => pa.label === poolAccount.label);
     if (!foundAccount) return;
 
+    setSelectedHistoryData({
+      type: EventType.DEPOSIT,
+      amount: poolAccount.deposit.value,
+      txHash: poolAccount.deposit.txHash,
+      timestamp: poolAccount.deposit.timestamp ? parseInt(poolAccount.deposit.timestamp.toString()) : 0,
+      reviewStatus: poolAccount.reviewStatus,
+      label: poolAccount.label,
+      scope: poolAccount.scope,
+    });
     setPoolAccount(foundAccount);
     setModalOpen(ModalType.PA_DETAILS);
     handleClose();
@@ -79,6 +96,13 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
   const handleClose = () => {
     setAnchorEl(Array(poolAccounts.length).fill(null));
   };
+
+  const getRowReviewStatus = useMemo(
+    () => (row: PoolAccount) => {
+      return row.reviewStatus === ReviewStatus.APPROVED && row.balance === 0n ? ReviewStatus.SPENT : row.reviewStatus;
+    },
+    [],
+  );
 
   const getExitHandler = (row: PoolAccount) => {
     return row.balance !== 0n ? () => handleExit(row) : undefined;
@@ -117,12 +141,12 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
 
             <TableBody>
               {records?.map((row) => (
-                <STableRow key={row.label.toString()}>
+                <STableRow key={row.label.toString() + row.lastCommitment.hash}>
                   {/* Temporary hardcoded pool account identifier */}
                   <STableCell sx={{ paddingLeft: 0 }}>{`PA-${row.name}`}</STableCell>
 
                   <STableCell sx={{ whiteSpace: 'nowrap' }}>
-                    <Tooltip title={formatEther(row.balance)} placement='top' disableInteractive>
+                    <Tooltip title={formatUnits(row.balance, decimals)} placement='top' disableInteractive>
                       <Typography variant='caption'>{`${formatDataNumber(row.balance, decimals, 3, false, true, false)} ${symbol}`}</Typography>
                     </Tooltip>
                   </STableCell>
@@ -133,13 +157,13 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
                       : formatTimestamp(row.deposit.timestamp?.toString() ?? '')}
                   </STableCell>
 
-                  <STableCell sx={{ paddingRight: mobile ? 0 : '1rem', textAlign: 'center' }}>
+                  <STableCell sx={{ paddingRight: mobile ? 0 : '1rem', textAlign: 'left' }}>
                     <Tooltip
-                      title={row.reviewStatus === ReviewStatus.PENDING ? statusMessage : ''}
+                      title={getRowReviewStatus(row) === ReviewStatus.PENDING ? statusMessage : ''}
                       placement='top'
                       disableInteractive
                     >
-                      <StatusChip status={row.reviewStatus} compact={mobile} />
+                      <StatusChip status={getRowReviewStatus(row)} compact={mobile} />
                     </Tooltip>
                   </STableCell>
 
