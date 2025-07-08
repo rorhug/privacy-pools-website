@@ -7,6 +7,13 @@ import { useAccountContext, usePoolAccountsContext, useChainContext } from '~/ho
 import { EventType, ReviewStatus } from '~/types';
 import { getUsdBalance } from '~/utils';
 
+type StatusObject = {
+  decisionStatus?: ReviewStatus;
+  reviewStatus?: ReviewStatus;
+  status?: ReviewStatus;
+  [key: string]: string | boolean | ReviewStatus | undefined;
+};
+
 export const Resume = () => {
   const { PENDING_STATUS_MESSAGE } = getConstants();
   const { poolAccounts } = useAccountContext();
@@ -26,10 +33,23 @@ export const Resume = () => {
     return name ? `PA-${name}` : 'Unknown Pool Account';
   }, [poolAccounts, selectedHistoryData]);
 
-  const tooltipTitle = selectedHistoryData?.reviewStatus === ReviewStatus.PENDING ? PENDING_STATUS_MESSAGE : '';
+  // Handle case where reviewStatus is an object
+  const getStatus = () => {
+    if (selectedHistoryData?.type === EventType.WITHDRAWAL) {
+      return ReviewStatus.APPROVED;
+    }
 
-  const status =
-    selectedHistoryData?.type === EventType.WITHDRAWAL ? ReviewStatus.APPROVED : selectedHistoryData?.reviewStatus;
+    let reviewStatus = selectedHistoryData?.reviewStatus;
+    if (typeof reviewStatus === 'object' && reviewStatus !== null) {
+      const statusObj = reviewStatus as StatusObject;
+      reviewStatus = statusObj.decisionStatus || statusObj.reviewStatus || statusObj.status || ReviewStatus.PENDING;
+    }
+
+    return reviewStatus || ReviewStatus.PENDING;
+  };
+
+  const status = getStatus();
+  const tooltipTitle = status === ReviewStatus.PENDING ? PENDING_STATUS_MESSAGE : '';
 
   return (
     <Stack direction='row' justifyContent='space-between' alignItems='start' width='100%'>

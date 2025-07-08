@@ -24,6 +24,13 @@ import { usePoolAccountsContext, useModal, useChainContext, useAccountContext } 
 import { EventType, ModalType, PoolAccount, ReviewStatus } from '~/types';
 import { formatDataNumber, formatTimestamp } from '~/utils';
 
+type StatusObject = {
+  decisionStatus?: ReviewStatus;
+  reviewStatus?: ReviewStatus;
+  status?: ReviewStatus;
+  [key: string]: string | boolean | ReviewStatus | undefined;
+};
+
 export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
   const { PENDING_STATUS_MESSAGE: statusMessage } = getConstants();
   const { setActionType, setPoolAccount, setAmount, setTarget } = usePoolAccountsContext();
@@ -99,7 +106,14 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
 
   const getRowReviewStatus = useMemo(
     () => (row: PoolAccount) => {
-      return row.reviewStatus === ReviewStatus.APPROVED && row.balance === 0n ? ReviewStatus.SPENT : row.reviewStatus;
+      // Handle case where reviewStatus is an object
+      let reviewStatus = row.reviewStatus;
+      if (typeof reviewStatus === 'object' && reviewStatus !== null) {
+        const statusObj = reviewStatus as StatusObject;
+        reviewStatus = statusObj.decisionStatus || statusObj.reviewStatus || statusObj.status || ReviewStatus.PENDING;
+      }
+
+      return reviewStatus === ReviewStatus.APPROVED && row.balance === 0n ? ReviewStatus.SPENT : reviewStatus;
     },
     [],
   );

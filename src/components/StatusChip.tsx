@@ -41,11 +41,11 @@ export const StatusChip = ({
       displayValue = ReviewStatus.PENDING;
     }
 
-    console.warn('StatusChip received object instead of string:', {
+    // Note: Object status format detected, extracting status value
+    console.debug('StatusChip received object format:', {
       receivedObject: status,
       extractedStatus,
       usingStatus: statusValue,
-      availableKeys: Object.keys(status),
     });
   } else if (typeof status === 'string') {
     statusValue = status as ReviewStatus;

@@ -5,17 +5,36 @@ import { usePoolAccountsContext } from '~/hooks';
 import { ReviewStatus } from '~/types';
 import { ModalTitle } from '../Deposit/DepositForm';
 
+type StatusObject = {
+  decisionStatus?: ReviewStatus;
+  reviewStatus?: ReviewStatus;
+  status?: ReviewStatus;
+  [key: string]: string | boolean | ReviewStatus | undefined;
+};
+
 export const DetailsHeader = () => {
   const { PENDING_STATUS_MESSAGE } = getConstants();
   const { poolAccount } = usePoolAccountsContext();
-  const tooltipTitle = poolAccount?.reviewStatus === ReviewStatus.PENDING ? PENDING_STATUS_MESSAGE : '';
+
+  // Handle case where reviewStatus is an object
+  const getStatus = () => {
+    let reviewStatus = poolAccount?.reviewStatus;
+    if (typeof reviewStatus === 'object' && reviewStatus !== null) {
+      const statusObj = reviewStatus as StatusObject;
+      reviewStatus = statusObj.decisionStatus || statusObj.reviewStatus || statusObj.status || ReviewStatus.PENDING;
+    }
+    return reviewStatus || ReviewStatus.PENDING;
+  };
+
+  const status = getStatus();
+  const tooltipTitle = status === ReviewStatus.PENDING ? PENDING_STATUS_MESSAGE : '';
 
   return (
     <Container>
       <Stack direction='row' alignItems='center' gap='2.2rem'>
         <ModalTitle variant='h2'>{`PA-${poolAccount?.name}`}</ModalTitle>
         <Tooltip title={tooltipTitle} placement='top' disableInteractive>
-          <StatusChip status={poolAccount?.reviewStatus} />
+          <StatusChip status={status} />
         </Tooltip>
       </Stack>
 
