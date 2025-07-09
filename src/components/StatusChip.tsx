@@ -1,20 +1,8 @@
 'use client';
 
 import { Box, styled } from '@mui/material';
-import { ReviewStatus } from '~/types';
-
-type StatusObject = {
-  id?: string;
-  decisionStatus?: ReviewStatus;
-  reviewStatus?: ReviewStatus;
-  status?: ReviewStatus;
-  reason?: string;
-  processed?: boolean;
-  createdAt?: string;
-  adminId?: string;
-  depositId?: string;
-  [key: string]: string | boolean | ReviewStatus | undefined;
-};
+import { ReviewStatus, StatusObject } from '~/types';
+import { getStatus } from '~/utils';
 
 export const StatusChip = ({
   status = ReviewStatus.PENDING,
@@ -29,23 +17,15 @@ export const StatusChip = ({
   let displayValue: string;
 
   if (typeof status === 'object' && status !== null) {
-    // If status is an object, try to extract the actual status value
-    // Based on error message, object has: {id, decisionStatus, reason, processed, createdAt, adminId, depositId}
-    const extractedStatus = status.decisionStatus || status.reviewStatus || status.status;
+    // Use shared getStatus function to extract the actual status value
+    statusValue = getStatus({ reviewStatus: status });
+    displayValue = statusValue;
 
-    if (extractedStatus && typeof extractedStatus === 'string') {
-      statusValue = extractedStatus as ReviewStatus;
-      displayValue = extractedStatus;
-    } else {
-      statusValue = ReviewStatus.PENDING;
-      displayValue = ReviewStatus.PENDING;
-    }
-
-    console.warn('StatusChip received object instead of string:', {
+    // Note: Object status format detected, extracting status value
+    console.debug('StatusChip received object format:', {
       receivedObject: status,
-      extractedStatus,
+      extractedStatus: statusValue,
       usingStatus: statusValue,
-      availableKeys: Object.keys(status),
     });
   } else if (typeof status === 'string') {
     statusValue = status as ReviewStatus;
