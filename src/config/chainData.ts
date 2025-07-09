@@ -115,7 +115,7 @@ const testnetChainData: ChainData = {
       {
         chainId: sepolia.id,
         assetAddress: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238',
-        address: '0x34A2068192b1297f2a7f85D7D8CdE66F8F0921cB',
+        address: '0x0b062Fe33c4f1592D8EA63f9a0177FcA44374C0f',
         scope: 18021368285297593722986850677939473668942851500120722179451099768921996600282n,
         deploymentBlock: 8587019n,
         entryPointAddress: '0x34A2068192b1297f2a7f85D7D8CdE66F8F0921cB',
