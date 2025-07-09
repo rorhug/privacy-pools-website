@@ -12,15 +12,8 @@ import {
 } from '~/components';
 import { getConfig } from '~/config';
 import { usePoolAccountsContext, useModal, useChainContext, useAccountContext } from '~/hooks';
-import { ActivityRecords, EventType, HistoryData, ModalType, ReviewStatus } from '~/types';
-import { formatDataNumber, getTimeAgo } from '~/utils';
-
-type StatusObject = {
-  decisionStatus?: ReviewStatus;
-  reviewStatus?: ReviewStatus;
-  status?: ReviewStatus;
-  [key: string]: string | boolean | ReviewStatus | undefined;
-};
+import { ActivityRecords, HistoryData, ModalType, ReviewStatus } from '~/types';
+import { formatDataNumber, getTimeAgo, getStatus } from '~/utils';
 
 const {
   constants: { ITEMS_PER_PAGE, PENDING_STATUS_MESSAGE },
@@ -66,21 +59,6 @@ export const ActivityTable = ({
   const handleDetails = (row: HistoryData[number]) => {
     setSelectedHistoryData(row);
     setModalOpen(ModalType.ACTIVITY_DETAILS);
-  };
-
-  const getStatus = (row: ActivityRecords[number]) => {
-    if (row.type === EventType.WITHDRAWAL) {
-      return ReviewStatus.APPROVED;
-    }
-
-    // Handle case where reviewStatus is an object
-    if (typeof row.reviewStatus === 'object' && row.reviewStatus !== null) {
-      // Try to extract the actual status from the object
-      const statusObj = row.reviewStatus as StatusObject;
-      return statusObj.decisionStatus || statusObj.reviewStatus || statusObj.status || ReviewStatus.PENDING;
-    }
-
-    return row.reviewStatus || ReviewStatus.PENDING;
   };
 
   const isPersonalEvents = view === 'personal';

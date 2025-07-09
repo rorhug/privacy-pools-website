@@ -3,30 +3,14 @@ import { ExtendedTooltip as Tooltip, StatusChip } from '~/components';
 import { getConstants } from '~/config/constants';
 import { usePoolAccountsContext } from '~/hooks';
 import { ReviewStatus } from '~/types';
+import { getStatus } from '~/utils';
 import { ModalTitle } from '../Deposit/DepositForm';
-
-type StatusObject = {
-  decisionStatus?: ReviewStatus;
-  reviewStatus?: ReviewStatus;
-  status?: ReviewStatus;
-  [key: string]: string | boolean | ReviewStatus | undefined;
-};
 
 export const DetailsHeader = () => {
   const { PENDING_STATUS_MESSAGE } = getConstants();
   const { poolAccount } = usePoolAccountsContext();
 
-  // Handle case where reviewStatus is an object
-  const getStatus = () => {
-    let reviewStatus = poolAccount?.reviewStatus;
-    if (typeof reviewStatus === 'object' && reviewStatus !== null) {
-      const statusObj = reviewStatus as StatusObject;
-      reviewStatus = statusObj.decisionStatus || statusObj.reviewStatus || statusObj.status || ReviewStatus.PENDING;
-    }
-    return reviewStatus || ReviewStatus.PENDING;
-  };
-
-  const status = getStatus();
+  const status = getStatus(poolAccount || {});
   const tooltipTitle = status === ReviewStatus.PENDING ? PENDING_STATUS_MESSAGE : '';
 
   return (

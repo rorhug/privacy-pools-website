@@ -22,14 +22,7 @@ import { DottedMenu, ExtendedTooltip as Tooltip, StatusChip } from '~/components
 import { getConstants } from '~/config/constants';
 import { usePoolAccountsContext, useModal, useChainContext, useAccountContext } from '~/hooks';
 import { EventType, ModalType, PoolAccount, ReviewStatus } from '~/types';
-import { formatDataNumber, formatTimestamp } from '~/utils';
-
-type StatusObject = {
-  decisionStatus?: ReviewStatus;
-  reviewStatus?: ReviewStatus;
-  status?: ReviewStatus;
-  [key: string]: string | boolean | ReviewStatus | undefined;
-};
+import { formatDataNumber, formatTimestamp, getStatus } from '~/utils';
 
 export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
   const { PENDING_STATUS_MESSAGE: statusMessage } = getConstants();
@@ -106,13 +99,7 @@ export const PoolAccountTable = ({ records }: { records: PoolAccount[] }) => {
 
   const getRowReviewStatus = useMemo(
     () => (row: PoolAccount) => {
-      // Handle case where reviewStatus is an object
-      let reviewStatus = row.reviewStatus;
-      if (typeof reviewStatus === 'object' && reviewStatus !== null) {
-        const statusObj = reviewStatus as StatusObject;
-        reviewStatus = statusObj.decisionStatus || statusObj.reviewStatus || statusObj.status || ReviewStatus.PENDING;
-      }
-
+      const reviewStatus = getStatus(row);
       return reviewStatus === ReviewStatus.APPROVED && row.balance === 0n ? ReviewStatus.SPENT : reviewStatus;
     },
     [],

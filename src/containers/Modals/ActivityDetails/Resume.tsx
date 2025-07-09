@@ -4,15 +4,8 @@ import { formatUnits } from 'viem';
 import { ExtendedTooltip as Tooltip, StatusChip } from '~/components';
 import { getConstants } from '~/config/constants';
 import { useAccountContext, usePoolAccountsContext, useChainContext } from '~/hooks';
-import { EventType, ReviewStatus } from '~/types';
-import { getUsdBalance } from '~/utils';
-
-type StatusObject = {
-  decisionStatus?: ReviewStatus;
-  reviewStatus?: ReviewStatus;
-  status?: ReviewStatus;
-  [key: string]: string | boolean | ReviewStatus | undefined;
-};
+import { ReviewStatus } from '~/types';
+import { getUsdBalance, getStatus } from '~/utils';
 
 export const Resume = () => {
   const { PENDING_STATUS_MESSAGE } = getConstants();
@@ -33,22 +26,7 @@ export const Resume = () => {
     return name ? `PA-${name}` : 'Unknown Pool Account';
   }, [poolAccounts, selectedHistoryData]);
 
-  // Handle case where reviewStatus is an object
-  const getStatus = () => {
-    if (selectedHistoryData?.type === EventType.WITHDRAWAL) {
-      return ReviewStatus.APPROVED;
-    }
-
-    let reviewStatus = selectedHistoryData?.reviewStatus;
-    if (typeof reviewStatus === 'object' && reviewStatus !== null) {
-      const statusObj = reviewStatus as StatusObject;
-      reviewStatus = statusObj.decisionStatus || statusObj.reviewStatus || statusObj.status || ReviewStatus.PENDING;
-    }
-
-    return reviewStatus || ReviewStatus.PENDING;
-  };
-
-  const status = getStatus();
+  const status = getStatus(selectedHistoryData || {});
   const tooltipTitle = status === ReviewStatus.PENDING ? PENDING_STATUS_MESSAGE : '';
 
   return (
