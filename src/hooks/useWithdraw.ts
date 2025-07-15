@@ -56,6 +56,17 @@ export const useWithdraw = () => {
   const { aspData, relayerData } = useExternalServices();
   const { switchChainAsync } = useSwitchChain();
   const {
+    selectedPoolInfo,
+    chainId,
+    balanceBN: { decimals },
+    relayersData,
+    selectedRelayer,
+  } = useChainContext();
+
+  const { accountService, addWithdrawal } = useAccountContext();
+  const publicClient = usePublicClient({ chainId });
+
+  const {
     amount,
     target,
     poolAccount,
@@ -67,17 +78,8 @@ export const useWithdraw = () => {
     setNewSecretKeys,
     setTransactionHash,
     feeCommitment,
+    feeBPSForWithdraw,
   } = usePoolAccountsContext();
-
-  const {
-    selectedPoolInfo,
-    chainId,
-    selectedRelayer,
-    relayersData,
-    balanceBN: { decimals },
-  } = useChainContext();
-  const { accountService, addWithdrawal } = useAccountContext();
-  const publicClient = usePublicClient({ chainId });
 
   const commitment = poolAccount?.lastCommitment;
   const aspLeaves = aspData.mtLeavesData?.aspLeaves;
@@ -189,22 +191,47 @@ export const useWithdraw = () => {
         progress: number;
       }) => void,
     ) => {
+      // Check for valid quote data immediately
+      if (!feeBPSForWithdraw || feeBPSForWithdraw === 0n || !feeCommitment) {
+        throw new Error('No valid quote available. Please ensure you have a valid quote before withdrawing.');
+      }
+
       if (TEST_MODE) return;
 
       const relayerDetails = relayersData.find((r) => r.url === selectedRelayer?.url);
 
-      if (
-        !poolAccount ||
-        !target ||
-        !commitment ||
-        !aspLeaves ||
-        !stateLeaves ||
-        !relayerDetails ||
-        !relayerDetails.relayerAddress ||
-        relayerDetails.fees === undefined ||
-        !accountService
-      )
-        throw new Error('Missing some required data to generate proof');
+      const missingFields = [];
+      if (!poolAccount) missingFields.push('poolAccount');
+      if (!target) missingFields.push('target');
+      if (!commitment) missingFields.push('commitment');
+      if (!aspLeaves) missingFields.push('aspLeaves');
+      if (!stateLeaves) missingFields.push('stateLeaves');
+      if (!relayerDetails) missingFields.push('relayerDetails');
+      if (!relayerDetails?.relayerAddress) missingFields.push('relayerAddress');
+      if (!feeBPSForWithdraw) missingFields.push('feeBPS');
+      if (!accountService) missingFields.push('accountService');
+
+      if (missingFields.length > 0) {
+        console.error('❌ Missing required data for proof generation:', missingFields);
+        throw new Error(`Missing required data: ${missingFields.join(', ')}`);
+      }
+
+      // TypeScript assertions - we've already validated these exist above
+      if (!relayerDetails || !relayerDetails.relayerAddress) {
+        throw new Error('Relayer details not available');
+      }
+      if (!commitment) {
+        throw new Error('Commitment not available');
+      }
+      if (!accountService) {
+        throw new Error('Account service not available');
+      }
+      if (!stateLeaves) {
+        throw new Error('State leaves not available');
+      }
+      if (!aspLeaves) {
+        throw new Error('ASP leaves not available');
+      }
 
       let poolScope: Hash | bigint | undefined;
       let stateMerkleProof: Awaited<ReturnType<typeof getMerkleProof>>;
@@ -216,7 +243,7 @@ export const useWithdraw = () => {
           getAddress(target),
           getAddress(selectedPoolInfo.entryPointAddress),
           getAddress(relayerDetails.relayerAddress),
-          relayerDetails.fees,
+          feeBPSForWithdraw.toString(),
         );
 
         poolScope = await getScope(publicClient, selectedPoolInfo?.address);
@@ -312,6 +339,8 @@ export const useWithdraw = () => {
       }
     },
     [
+      feeCommitment,
+      feeBPSForWithdraw,
       relayersData,
       selectedRelayer?.url,
       poolAccount,
