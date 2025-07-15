@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { addBreadcrumb, captureException, withScope } from '@sentry/nextjs';
 import { getAddress, TransactionExecutionError } from 'viem';
 import { generatePrivateKey } from 'viem/accounts';
@@ -28,6 +28,36 @@ export const useExit = () => {
 
   //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const logErrorToSentry = (error: any, context: Record<string, any>) => {
+    // Filter out expected user behavior errors
+    if (error && typeof error === 'object') {
+      const message = error.message || '';
+      const errorName = error.name || '';
+      const errorCode = error.code;
+
+      // Don't log wallet rejections and user behavior errors
+      if (
+        errorCode === 4001 ||
+        errorCode === 4100 ||
+        errorCode === 4200 ||
+        errorCode === -32002 ||
+        errorCode === -32003 ||
+        message.includes('User rejected the request') ||
+        message.includes('User denied') ||
+        message.includes('User cancelled') ||
+        message.includes('Pop up window failed to open') ||
+        message.includes('provider is not defined') ||
+        message.includes('No Ethereum provider found') ||
+        message.includes('Connection timeout') ||
+        message.includes('Request timeout') ||
+        message.includes('Transaction cancelled') ||
+        message.includes('Chain switching failed') ||
+        errorName === 'UserRejectedRequestError'
+      ) {
+        console.warn('Filtered wallet user behavior error (not logging to Sentry)');
+        return;
+      }
+    }
+
     withScope((scope) => {
       scope.setUser({
         address: address,
@@ -55,13 +85,67 @@ export const useExit = () => {
     });
   };
 
-  const generateProof = async () => {
-    if (!poolAccount?.lastCommitment) throw new Error('Pool account commitment not found');
+  const generateProof = useCallback(
+    async (
+      onProgress?: (progress: {
+        phase: 'loading_circuits' | 'generating_proof' | 'verifying_proof';
+        progress: number;
+      }) => void,
+    ) => {
+      if (!poolAccount?.lastCommitment) throw new Error('Pool account commitment not found');
 
-    const proof = await generateRagequitProof(poolAccount.lastCommitment);
-    setProof(proof);
-    return proof;
-  };
+      // Use worker for progress updates, but still call actual SDK for proof generation
+      const workerPromise = new Promise((resolve, reject) => {
+        const worker = new Worker(new URL('../workers/zkProofWorker.ts', import.meta.url));
+        const requestId = Math.random().toString(36).substring(2, 15);
+
+        worker.onmessage = (event) => {
+          const { type, payload, id } = event.data;
+
+          if (id !== requestId) return;
+
+          switch (type) {
+            case 'success':
+              worker.terminate();
+              resolve(payload);
+              break;
+            case 'error':
+              worker.terminate();
+              reject(new Error(payload.message));
+              break;
+            case 'progress':
+              if (onProgress) {
+                onProgress(payload);
+              }
+              break;
+          }
+        };
+
+        worker.onerror = (error) => {
+          worker.terminate();
+          reject(error);
+        };
+
+        worker.postMessage({
+          type: 'generateRagequitProof',
+          payload: poolAccount.lastCommitment,
+          id: requestId,
+        });
+      });
+
+      // Run both worker (for progress) and actual SDK call in parallel
+      const [, proof] = await Promise.all([workerPromise, generateRagequitProof(poolAccount.lastCommitment)]);
+
+      setProof(proof);
+
+      if (onProgress) {
+        onProgress({ phase: 'verifying_proof', progress: 1.0 });
+      }
+
+      return proof;
+    },
+    [poolAccount?.lastCommitment, setProof],
+  );
 
   const exit = async () => {
     if (!proof) throw new Error('Ragequit proof not found');
@@ -123,6 +207,7 @@ export const useExit = () => {
 
         const receipt = await publicClient?.waitForTransactionReceipt({
           hash,
+          timeout: 300_000, // 5 minutes timeout for exit transactions
         });
 
         if (!receipt) throw new Error('Receipt not found');

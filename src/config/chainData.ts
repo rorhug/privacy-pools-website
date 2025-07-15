@@ -1,7 +1,8 @@
 import { Address, parseEther, parseUnits } from 'viem';
 import { Chain, mainnet, sepolia } from 'viem/chains';
 import { getEnv } from '~/config/env';
-import mainnetIcon from '~/assets/icons/mainnet.svg';
+import mainnetIcon from '~/assets/icons/mainnet_color.svg';
+import usdsIcon from '~/assets/icons/usds.svg';
 
 const { ALCHEMY_KEY, IS_TESTNET, ASP_ENDPOINT } = getEnv();
 
@@ -11,7 +12,7 @@ const testnetChains: readonly [Chain, ...Chain[]] = [sepolia];
 
 export const whitelistedChains = IS_TESTNET ? testnetChains : mainnetChains;
 
-export type ChainAssets = 'ETH' | 'USDC' | 'USDT';
+export type ChainAssets = 'ETH' | 'USDS' | 'USDC' | 'USDT';
 
 export interface PoolInfo {
   chainId: number;
@@ -52,7 +53,7 @@ const mainnetChainData: ChainData = {
     decimals: mainnet.nativeCurrency.decimals,
     image: mainnetIcon.src,
     explorerUrl: mainnet.blockExplorers.default.url,
-    relayers: [{ name: 'Freedom Relay', url: 'https://www.freedomrelay.io' }],
+    relayers: [{ name: 'Fast Relay', url: 'https://fastrelay.xyz' }],
     sdkRpcUrl: `/api/hypersync-rpc?chainId=1`, // Secure Hypersync proxy (relative URL)
     rpcUrl: `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
     aspUrl: ASP_ENDPOINT,
@@ -68,6 +69,18 @@ const mainnetChainData: ChainData = {
         asset: 'ETH',
         assetDecimals: 18,
         icon: mainnetIcon.src,
+      },
+      {
+        chainId: mainnet.id,
+        address: '0x05e4DBD71B56861eeD2Aaa12d00A797F04B5D3c0',
+        assetAddress: '0xdC035D45d973E3EC169d2276DDab16f1e407384F',
+        scope: 10083421949316970946867916491567109470259179563818386567305777802830033294482n,
+        deploymentBlock: 22917987n,
+        entryPointAddress: '0x6818809EefCe719E480a7526D76bD3e561526b46',
+        maxDeposit: parseUnits('1000000', 18),
+        asset: 'USDS',
+        assetDecimals: 18,
+        icon: usdsIcon.src,
       },
     ],
   },
@@ -86,7 +99,7 @@ const testnetChainData: ChainData = {
     aspUrl: ASP_ENDPOINT,
     relayers: [
       { name: 'Testnet Relay', url: 'https://testnet-relayer.privacypools.com' },
-      { name: 'Freedom Relay', url: 'https://www.freedomrelay.io' },
+      { name: 'Freedom Relay', url: 'https://fastrelay.xyz' },
     ],
     poolInfo: [
       {
@@ -115,7 +128,7 @@ const testnetChainData: ChainData = {
       {
         chainId: sepolia.id,
         assetAddress: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238',
-        address: '0x34A2068192b1297f2a7f85D7D8CdE66F8F0921cB',
+        address: '0x0b062Fe33c4f1592D8EA63f9a0177FcA44374C0f',
         scope: 18021368285297593722986850677939473668942851500120722179451099768921996600282n,
         deploymentBlock: 8587019n,
         entryPointAddress: '0x34A2068192b1297f2a7f85D7D8CdE66F8F0921cB',

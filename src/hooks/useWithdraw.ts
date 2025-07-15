@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { addBreadcrumb, captureException, withScope } from '@sentry/nextjs';
 import { getAddress, Hex, parseUnits, TransactionExecutionError } from 'viem';
 import { generatePrivateKey } from 'viem/accounts';
@@ -56,6 +56,17 @@ export const useWithdraw = () => {
   const { aspData, relayerData } = useExternalServices();
   const { switchChainAsync } = useSwitchChain();
   const {
+    selectedPoolInfo,
+    chainId,
+    balanceBN: { decimals },
+    relayersData,
+    selectedRelayer,
+  } = useChainContext();
+
+  const { accountService, addWithdrawal } = useAccountContext();
+  const publicClient = usePublicClient({ chainId });
+
+  const {
     amount,
     target,
     poolAccount,
@@ -67,56 +78,91 @@ export const useWithdraw = () => {
     setNewSecretKeys,
     setTransactionHash,
     feeCommitment,
+    feeBPSForWithdraw,
   } = usePoolAccountsContext();
-
-  const {
-    selectedPoolInfo,
-    chainId,
-    selectedRelayer,
-    relayersData,
-    balanceBN: { decimals },
-  } = useChainContext();
-  const { accountService, addWithdrawal } = useAccountContext();
-  const publicClient = usePublicClient({ chainId });
 
   const commitment = poolAccount?.lastCommitment;
   const aspLeaves = aspData.mtLeavesData?.aspLeaves;
   const stateLeaves = aspData.mtLeavesData?.stateTreeLeaves;
   const { address } = useAccount();
 
-  //eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const logErrorToSentry = (error: any, context: Record<string, any>) => {
-    withScope((scope) => {
-      scope.setUser({
-        address: address,
+  const logErrorToSentry = useCallback(
+    (error: Error | unknown, context: Record<string, unknown>) => {
+      // Filter out expected user behavior errors
+      if (error && typeof error === 'object') {
+        const message = (error as { message?: string }).message || '';
+        const errorName = (error as { name?: string }).name || '';
+        const errorCode = (error as { code?: number }).code;
+
+        // Don't log wallet rejections and user behavior errors
+        if (
+          errorCode === 4001 ||
+          errorCode === 4100 ||
+          errorCode === 4200 ||
+          errorCode === -32002 ||
+          errorCode === -32003 ||
+          message.includes('User rejected the request') ||
+          message.includes('User denied') ||
+          message.includes('User cancelled') ||
+          message.includes('Pop up window failed to open') ||
+          message.includes('provider is not defined') ||
+          message.includes('No Ethereum provider found') ||
+          message.includes('Connection timeout') ||
+          message.includes('Request timeout') ||
+          message.includes('Transaction cancelled') ||
+          message.includes('Chain switching failed') ||
+          errorName === 'UserRejectedRequestError'
+        ) {
+          console.warn('Filtered wallet user behavior error (not logging to Sentry)');
+          return;
+        }
+      }
+
+      withScope((scope) => {
+        scope.setUser({
+          address: address,
+        });
+
+        // Set additional context
+        scope.setContext('withdrawal_context', {
+          chainId,
+          poolAddress: selectedPoolInfo?.address,
+          entryPointAddress: selectedPoolInfo?.entryPointAddress,
+          amount: amount?.toString(),
+          target,
+          hasPoolAccount: !!poolAccount,
+          hasCommitment: !!commitment,
+          hasAspLeaves: !!aspLeaves,
+          hasStateLeaves: !!stateLeaves,
+          hasSelectedRelayer: !!selectedRelayer?.url,
+          selectedRelayer,
+          testMode: TEST_MODE,
+          ...context,
+        });
+
+        // Set tags for filtering
+        scope.setTag('operation', 'withdraw');
+        scope.setTag('chain_id', chainId?.toString());
+        scope.setTag('test_mode', TEST_MODE.toString());
+
+        // Log the error
+        captureException(error);
       });
-
-      // Set additional context
-      scope.setContext('withdrawal_context', {
-        chainId,
-        poolAddress: selectedPoolInfo?.address,
-        entryPointAddress: selectedPoolInfo?.entryPointAddress,
-        amount: amount?.toString(),
-        target,
-        hasPoolAccount: !!poolAccount,
-        hasCommitment: !!commitment,
-        hasAspLeaves: !!aspLeaves,
-        hasStateLeaves: !!stateLeaves,
-        hasSelectedRelayer: !!selectedRelayer?.url,
-        selectedRelayer,
-        testMode: TEST_MODE,
-        ...context,
-      });
-
-      // Set tags for filtering
-      scope.setTag('operation', 'withdraw');
-      scope.setTag('chain_id', chainId?.toString());
-      scope.setTag('test_mode', TEST_MODE.toString());
-
-      // Log the error
-      captureException(error);
-    });
-  };
+    },
+    [
+      address,
+      chainId,
+      selectedPoolInfo?.address,
+      selectedPoolInfo?.entryPointAddress,
+      selectedRelayer,
+      amount,
+      target,
+      poolAccount,
+      commitment,
+      aspLeaves,
+      stateLeaves,
+    ],
+  );
 
   const getPrivacyPoolErrorMessage = (errorMessage: string): string | null => {
     // Check for exact matches first
@@ -138,84 +184,183 @@ export const useWithdraw = () => {
     return null;
   };
 
-  const generateProof = async () => {
-    if (TEST_MODE) return;
+  const generateProof = useCallback(
+    async (
+      onProgress?: (progress: {
+        phase: 'loading_circuits' | 'generating_proof' | 'verifying_proof';
+        progress: number;
+      }) => void,
+    ) => {
+      // Check for valid quote data immediately
+      if (!feeBPSForWithdraw || feeBPSForWithdraw === 0n || !feeCommitment) {
+        throw new Error('No valid quote available. Please ensure you have a valid quote before withdrawing.');
+      }
 
-    const relayerDetails = relayersData.find((r) => r.url === selectedRelayer?.url);
+      if (TEST_MODE) return;
 
-    if (
-      !poolAccount ||
-      !target ||
-      !commitment ||
-      !aspLeaves ||
-      !stateLeaves ||
-      !relayerDetails ||
-      !relayerDetails.relayerAddress ||
-      relayerDetails.fees === undefined ||
-      !accountService
-    )
-      throw new Error('Missing some required data to generate proof');
+      const relayerDetails = relayersData.find((r) => r.url === selectedRelayer?.url);
 
-    let poolScope: Hash | bigint | undefined;
-    let stateMerkleProof: Awaited<ReturnType<typeof getMerkleProof>>;
-    let aspMerkleProof: Awaited<ReturnType<typeof getMerkleProof>>;
-    let merkleProofGenerated = false;
+      const missingFields = [];
+      if (!poolAccount) missingFields.push('poolAccount');
+      if (!target) missingFields.push('target');
+      if (!commitment) missingFields.push('commitment');
+      if (!aspLeaves) missingFields.push('aspLeaves');
+      if (!stateLeaves) missingFields.push('stateLeaves');
+      if (!relayerDetails) missingFields.push('relayerDetails');
+      if (!relayerDetails?.relayerAddress) missingFields.push('relayerAddress');
+      if (!feeBPSForWithdraw) missingFields.push('feeBPS');
+      if (!accountService) missingFields.push('accountService');
 
-    try {
-      const newWithdrawal = prepareWithdrawRequest(
-        getAddress(target),
-        getAddress(selectedPoolInfo.entryPointAddress),
-        getAddress(relayerDetails.relayerAddress),
-        relayerDetails.fees,
-      );
+      if (missingFields.length > 0) {
+        console.error('❌ Missing required data for proof generation:', missingFields);
+        throw new Error(`Missing required data: ${missingFields.join(', ')}`);
+      }
 
-      poolScope = await getScope(publicClient, selectedPoolInfo?.address);
-      stateMerkleProof = await getMerkleProof(stateLeaves?.map(BigInt) as bigint[], commitment.hash);
-      aspMerkleProof = await getMerkleProof(aspLeaves?.map(BigInt), commitment.label);
-      const context = await getContext(newWithdrawal, poolScope as Hash);
-      const { secret, nullifier } = createWithdrawalSecrets(accountService, commitment);
+      // TypeScript assertions - we've already validated these exist above
+      if (!relayerDetails || !relayerDetails.relayerAddress) {
+        throw new Error('Relayer details not available');
+      }
+      if (!commitment) {
+        throw new Error('Commitment not available');
+      }
+      if (!accountService) {
+        throw new Error('Account service not available');
+      }
+      if (!stateLeaves) {
+        throw new Error('State leaves not available');
+      }
+      if (!aspLeaves) {
+        throw new Error('ASP leaves not available');
+      }
 
-      aspMerkleProof.index = Object.is(aspMerkleProof.index, NaN) ? 0 : aspMerkleProof.index; // workaround for NaN index, SDK issue
+      let poolScope: Hash | bigint | undefined;
+      let stateMerkleProof: Awaited<ReturnType<typeof getMerkleProof>>;
+      let aspMerkleProof: Awaited<ReturnType<typeof getMerkleProof>>;
+      let merkleProofGenerated = false;
 
-      const withdrawalProofInput = prepareWithdrawalProofInput(
-        commitment,
-        parseUnits(amount, decimals),
-        stateMerkleProof,
-        aspMerkleProof,
-        BigInt(context),
-        secret,
-        nullifier,
-      );
-      if (aspMerkleProof && stateMerkleProof) merkleProofGenerated = true;
+      try {
+        const newWithdrawal = prepareWithdrawRequest(
+          getAddress(target),
+          getAddress(selectedPoolInfo.entryPointAddress),
+          getAddress(relayerDetails.relayerAddress),
+          feeBPSForWithdraw.toString(),
+        );
 
-      const proof = await generateWithdrawalProof(commitment, withdrawalProofInput);
-      const verified = await verifyWithdrawalProof(proof);
+        poolScope = await getScope(publicClient, selectedPoolInfo?.address);
+        stateMerkleProof = await getMerkleProof(stateLeaves?.map(BigInt) as bigint[], commitment.hash);
+        aspMerkleProof = await getMerkleProof(aspLeaves?.map(BigInt), commitment.label);
+        const context = await getContext(newWithdrawal, poolScope as Hash);
+        const { secret, nullifier } = createWithdrawalSecrets(accountService, commitment);
 
-      if (!verified) throw new Error('Proof verification failed');
+        aspMerkleProof.index = Object.is(aspMerkleProof.index, NaN) ? 0 : aspMerkleProof.index; // workaround for NaN index, SDK issue
 
-      setProof(proof);
-      setWithdrawal(newWithdrawal);
-      setNewSecretKeys({ secret, nullifier });
+        const withdrawalProofInput = prepareWithdrawalProofInput(
+          commitment,
+          parseUnits(amount, decimals),
+          stateMerkleProof,
+          aspMerkleProof,
+          BigInt(context),
+          secret,
+          nullifier,
+        );
+        if (aspMerkleProof && stateMerkleProof) merkleProofGenerated = true;
 
-      return proof;
-    } catch (err) {
-      const error = err as TransactionExecutionError;
+        // Use worker for progress updates, but still call actual SDK for proof generation
+        const workerPromise = new Promise((resolve, reject) => {
+          const worker = new Worker(new URL('../workers/zkProofWorker.ts', import.meta.url));
+          const requestId = Math.random().toString(36).substring(2, 15);
 
-      // Log proof generation error to Sentry
-      logErrorToSentry(error, {
-        operation_step: 'proof_generation',
-        error_type: error?.name || 'unknown',
-        has_pool_scope: !!poolScope,
-        merkle_proof_generated: merkleProofGenerated,
-        proof_verified: false,
-      });
+          worker.onmessage = (event) => {
+            const { type, payload, id } = event.data;
 
-      const errorMessage = getDefaultErrorMessage(error?.shortMessage || error?.message);
-      addNotification('error', errorMessage);
-      console.error('Error generating proof', error);
-      throw error;
-    }
-  };
+            if (id !== requestId) return;
+
+            switch (type) {
+              case 'success':
+                worker.terminate();
+                resolve(payload);
+                break;
+              case 'error':
+                worker.terminate();
+                reject(new Error(payload.message));
+                break;
+              case 'progress':
+                if (onProgress) {
+                  onProgress(payload);
+                }
+                break;
+            }
+          };
+
+          worker.onerror = (error) => {
+            worker.terminate();
+            reject(error);
+          };
+
+          worker.postMessage({
+            type: 'generateWithdrawalProof',
+            payload: { commitment, input: withdrawalProofInput },
+            id: requestId,
+          });
+        });
+
+        // Run both worker (for progress) and actual SDK call in parallel
+        const [, proof] = await Promise.all([workerPromise, generateWithdrawalProof(commitment, withdrawalProofInput)]);
+
+        const verified = await verifyWithdrawalProof(proof);
+
+        if (!verified) throw new Error('Proof verification failed');
+
+        setProof(proof);
+        setWithdrawal(newWithdrawal);
+        setNewSecretKeys({ secret, nullifier });
+
+        if (onProgress) {
+          onProgress({ phase: 'verifying_proof', progress: 1.0 });
+        }
+
+        return proof;
+      } catch (err) {
+        const error = err as TransactionExecutionError;
+
+        // Log proof generation error to Sentry
+        logErrorToSentry(error, {
+          operation_step: 'proof_generation',
+          error_type: error?.name || 'unknown',
+          has_pool_scope: !!poolScope,
+          merkle_proof_generated: merkleProofGenerated,
+          proof_verified: false,
+        });
+
+        const errorMessage = getDefaultErrorMessage(error?.shortMessage || error?.message);
+        addNotification('error', errorMessage);
+        console.error('Error generating proof', error);
+        throw error;
+      }
+    },
+    [
+      feeCommitment,
+      feeBPSForWithdraw,
+      relayersData,
+      selectedRelayer?.url,
+      poolAccount,
+      target,
+      commitment,
+      aspLeaves,
+      stateLeaves,
+      accountService,
+      selectedPoolInfo,
+      publicClient,
+      amount,
+      decimals,
+      addNotification,
+      getDefaultErrorMessage,
+      setProof,
+      setWithdrawal,
+      setNewSecretKeys,
+      logErrorToSentry,
+    ],
+  );
 
   const withdraw = async () => {
     if (!TEST_MODE) {
@@ -274,6 +419,7 @@ export const useWithdraw = () => {
 
         const receipt = await publicClient?.waitForTransactionReceipt({
           hash: res.txHash as Hex,
+          timeout: 300_000, // 5 minutes timeout for withdrawal transactions
         });
 
         if (!receipt) throw new Error('Receipt not found');

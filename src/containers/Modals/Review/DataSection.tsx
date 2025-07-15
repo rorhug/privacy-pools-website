@@ -3,7 +3,13 @@ import { Stack, styled, Typography } from '@mui/material';
 import { formatUnits, parseUnits } from 'viem';
 import { useAccount } from 'wagmi';
 import { ExtendedTooltip as Tooltip } from '~/components';
-import { useExternalServices, usePoolAccountsContext, useChainContext } from '~/hooks';
+import {
+  useExternalServices,
+  usePoolAccountsContext,
+  useChainContext,
+  useRequestQuote,
+  useNotifications,
+} from '~/hooks';
 import { EventType } from '~/types';
 import { getUsdBalance, truncateAddress } from '~/utils';
 
@@ -13,10 +19,35 @@ export const DataSection = () => {
     balanceBN: { symbol, decimals },
     price,
     selectedPoolInfo,
+    chainId,
   } = useChainContext();
-  const { currentSelectedRelayerData } = useExternalServices();
+  const { currentSelectedRelayerData, relayerData } = useExternalServices();
   const { amount, target, actionType, poolAccount, vettingFeeBPS, feeBPSForWithdraw } = usePoolAccountsContext();
+  const { addNotification } = useNotifications();
   const isDeposit = actionType === EventType.DEPOSIT;
+
+  // Add quote timer for withdrawals
+  const amountBN = parseUnits(amount, decimals);
+  const { getQuote, isQuoteLoading, quoteError } = relayerData || {};
+  const {
+    countdown,
+    isQuoteValid,
+    isExpired,
+    requestNewQuote,
+    feeBPS: quoteFeesBPS,
+  } = useRequestQuote({
+    getQuote: getQuote || (() => Promise.reject(new Error('No relayer data'))),
+    isQuoteLoading: isQuoteLoading || false,
+    quoteError: quoteError || null,
+    chainId,
+    amountBN,
+    assetAddress: selectedPoolInfo?.assetAddress,
+    recipient: target,
+    isValidAmount: amountBN > 0n,
+    isRecipientAddressValid: !!target,
+    isRelayerSelected: !!currentSelectedRelayerData?.relayerAddress,
+    addNotification,
+  });
   const aspDataFees = (vettingFeeBPS * parseUnits(amount, decimals)) / 100n / 100n;
   const aspOrRelayer = {
     label: isDeposit ? 'ASP' : 'Relayer',
@@ -26,12 +57,27 @@ export const DataSection = () => {
   const fromAddress = isDeposit ? address : '';
   const toAddress = isDeposit ? '' : target;
 
-  const relayerFees = (BigInt(feeBPSForWithdraw ?? 0n) * parseUnits(amount, decimals)) / 100n / 100n;
+  // Use fresh quote fees for withdrawals, fallback to context fees if no quote
+  const effectiveFeeBPS = isDeposit ? feeBPSForWithdraw : (quoteFeesBPS ?? feeBPSForWithdraw ?? 0);
+  const relayerFees = (BigInt(effectiveFeeBPS) * parseUnits(amount, decimals)) / 100n / 100n;
 
   const fees = isDeposit ? aspDataFees : relayerFees;
   const feeFormatted = formatUnits(fees, decimals);
   const feeUSD = getUsdBalance(price, feeFormatted, decimals);
   const feeText = `${feeFormatted} ${symbol} (~ ${feeUSD} USD)`;
+
+  // Create full precision tooltips - show complete decimal precision
+  const formatFullPrecision = (value: bigint, decimals: number) => {
+    const valueStr = value.toString();
+    if (valueStr.length <= decimals) {
+      return `0.${'0'.repeat(decimals - valueStr.length)}${valueStr}`;
+    }
+    const integerPart = valueStr.slice(0, -decimals);
+    const decimalPart = valueStr.slice(-decimals);
+    return `${integerPart}.${decimalPart}`;
+  };
+
+  const feeTooltip = `${formatFullPrecision(fees, decimals)} ${symbol}`;
 
   const feesCollectorAddress = isDeposit
     ? selectedPoolInfo.entryPointAddress
@@ -44,7 +90,11 @@ export const DataSection = () => {
   const amountWithFeeUSD = getUsdBalance(price, amountWithFee, decimals);
 
   const valueText = `${amountWithFee} ${symbol} (~ ${amountWithFeeUSD} USD)`;
+  const valueTooltip = `${formatFullPrecision(amountWithFeeBN, decimals)} ${symbol}`;
+
   const totalText = `~${amount.slice(0, 6)} ${symbol} (~ ${amountUSD} USD)`;
+  const totalAmountBN = parseUnits(amount, decimals);
+  const totalTooltip = `${formatFullPrecision(totalAmountBN, decimals)} ${symbol}`;
 
   return (
     <Container>
@@ -91,18 +141,45 @@ export const DataSection = () => {
           </Row>
           <Row>
             <Label variant='body2'>Fees:</Label>
-            <Value variant='body2'>{feeText}</Value>
+            <Tooltip title={feeTooltip} placement='top'>
+              <Value variant='body2'>{feeText}</Value>
+            </Tooltip>
           </Row>
+          {actionType === EventType.WITHDRAWAL && (
+            <>
+              {isQuoteValid && countdown > 0 && (
+                <Row>
+                  <Label variant='body2'>Quote expires:</Label>
+                  <QuoteTimer variant='body2'>in {countdown}s</QuoteTimer>
+                </Row>
+              )}
+              {isExpired && (
+                <Row>
+                  <Label variant='body2'>Quote status:</Label>
+                  <ExpiredQuote variant='body2'>
+                    Expired -
+                    <RefreshButton onClick={requestNewQuote} disabled={isQuoteLoading}>
+                      {isQuoteLoading ? 'Getting new quote...' : 'Request new quote'}
+                    </RefreshButton>
+                  </ExpiredQuote>
+                </Row>
+              )}
+            </>
+          )}
           <Row>
             <Label variant='body2'>Value:</Label>
-            <Value variant='body2'>{valueText}</Value>
+            <Tooltip title={valueTooltip} placement='top'>
+              <Value variant='body2'>{valueText}</Value>
+            </Tooltip>
           </Row>
         </Stack>
       )}
 
       <Row>
         <TotalValueLabel variant='body2'>{actionType !== EventType.EXIT ? 'Total:' : 'Value:'}</TotalValueLabel>
-        <TotalValue variant='body2'>{totalText}</TotalValue>
+        <Tooltip title={totalTooltip} placement='top'>
+          <TotalValue variant='body2'>{totalText}</TotalValue>
+        </Tooltip>
       </Row>
     </Container>
   );
@@ -152,4 +229,38 @@ const TotalValueLabel = styled(Label)(({ theme }) => ({
 
 const TotalValue = styled(Value)(({ theme }) => ({
   color: theme.palette.grey[900],
+}));
+
+const QuoteTimer = styled(Value)(({ theme }) => ({
+  fontWeight: 500,
+  color: theme.palette.warning.main,
+}));
+
+const ExpiredQuote = styled(Value)(({ theme }) => ({
+  fontWeight: 500,
+  color: theme.palette.error.main,
+  display: 'flex',
+  alignItems: 'center',
+  gap: theme.spacing(1),
+}));
+
+const RefreshButton = styled('button')(({ theme }) => ({
+  background: 'none',
+  border: `1px solid ${theme.palette.primary.main}`,
+  color: theme.palette.primary.main,
+  padding: theme.spacing(0.5, 1),
+  borderRadius: theme.spacing(0.5),
+  fontSize: '1.2rem',
+  cursor: 'pointer',
+  marginLeft: theme.spacing(1),
+
+  '&:hover': {
+    backgroundColor: theme.palette.primary.main,
+    color: theme.palette.primary.contrastText,
+  },
+
+  '&:disabled': {
+    opacity: 0.6,
+    cursor: 'not-allowed',
+  },
 }));
