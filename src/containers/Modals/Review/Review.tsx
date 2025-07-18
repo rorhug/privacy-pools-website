@@ -31,7 +31,6 @@ import { ModalContainer, ModalTitle } from '../Deposit';
 import { LinksSection } from '../LinksSection';
 import { DataSection } from './DataSection';
 import { ExitMessage } from './ExitMessage';
-import { FeeBreakdown } from './FeeBreakdown';
 import { PoolAccountSection } from './PoolAccountSection';
 
 export const ReviewModal = () => {
@@ -59,7 +58,7 @@ export const ReviewModal = () => {
 
   const amountBN = parseUnits(amount, decimals);
   const { getQuote, isQuoteLoading } = relayerData || {};
-  const { isQuoteValid, isExpired, feeBPS, baseFeeBPS, extraGasAmountETH, requestNewQuote } = useRequestQuote({
+  const { isQuoteValid, isExpired, requestNewQuote } = useRequestQuote({
     getQuote: getQuote || (() => Promise.reject(new Error('No relayer data'))),
     isQuoteLoading: isQuoteLoading || false,
     quoteError: null,
@@ -117,11 +116,6 @@ export const ReviewModal = () => {
           <Divider />
         </Stack>
 
-        {/* Fee Breakdown for withdrawals with valid quote data */}
-        {actionType === EventType.WITHDRAWAL && isQuoteValid && feeBPS !== null && baseFeeBPS !== null && (
-          <FeeBreakdown feeBPS={feeBPS} baseFeeBPS={baseFeeBPS} extraGasAmountETH={extraGasAmountETH} amount={amount} />
-        )}
-
         <PoolAccountSection />
 
         {actionType === EventType.EXIT && <ExitMessage />}
@@ -132,12 +126,11 @@ export const ReviewModal = () => {
               Gas Token Drop
             </Typography>
             <Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
-              Get some ETH sent to your withdrawal address to cover gas fees for future transactions. This will increase
-              your withdrawal fee by 1 swap + 1 transfer.
+              Get ETH for gas fees (1 swap + 1 transfer)
             </Typography>
             <FormControlLabel
               control={
-                <Switch
+                <GreenSwitch
                   checked={quoteState.extraGas}
                   onChange={(e) => setExtraGas(e.target.checked)}
                   disabled={isQuoteLoading}
@@ -214,11 +207,24 @@ const PulsingButton = styled(Button)({
   },
 });
 
+const GreenSwitch = styled(Switch)(({ theme }) => ({
+  '& .MuiSwitch-switchBase.Mui-checked': {
+    color: theme.palette.success.main,
+    '&:hover': {
+      backgroundColor: `${theme.palette.success.main}20`,
+    },
+  },
+  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+    backgroundColor: theme.palette.success.main,
+  },
+}));
+
 const NativeTokenDropSection = styled(Box)(({ theme }) => ({
   padding: '1.5rem',
   backgroundColor: theme.palette.background.paper,
   borderRadius: '8px',
-  border: `1px solid ${theme.palette.divider}`,
+  border: `2px solid ${theme.palette.success.main}`,
   margin: '1rem 0',
   maxWidth: '400px',
+  boxShadow: `0 2px 8px ${theme.palette.success.main}20`,
 }));
