@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
-import { Stack, styled, Typography, IconButton, Collapse } from '@mui/material';
-import { formatUnits, parseUnits } from 'viem';
-import { useAccount } from 'wagmi';
+import { Stack, styled, Typography, IconButton, Collapse, Avatar, Box } from '@mui/material';
+import { formatUnits, parseUnits, isAddress } from 'viem';
+import { useAccount, useEnsName, useEnsAvatar } from 'wagmi';
 import { ExtendedTooltip as Tooltip } from '~/components';
 import { useQuoteContext } from '~/contexts/QuoteContext';
 import {
@@ -15,7 +15,16 @@ import {
 } from '~/hooks';
 import { EventType } from '~/types';
 import { getUsdBalance, truncateAddress } from '~/utils';
-import { FeeBreakdown } from './FeeBreakdown';
+import { FeeBreakdown, formatFeeDisplay } from './FeeBreakdown';
+
+const getMaxDisplayPrecision = (isStableAsset: boolean): number => {
+  // Stable assets (stablecoins and yield-bearing stablecoins) should have max 3 decimal places
+  if (isStableAsset) {
+    return 3;
+  }
+  // ETH and other tokens can show full precision (use high number)
+  return 18;
+};
 
 export const DataSection = () => {
   const { address } = useAccount();
@@ -40,6 +49,7 @@ export const DataSection = () => {
   } = usePoolAccountsContext();
   const { addNotification } = useNotifications();
   const isDeposit = actionType === EventType.DEPOSIT;
+  const isStableAsset = selectedPoolInfo?.isStableAsset ?? false;
 
   // Add quote timer for withdrawals
   const amountBN = parseUnits(amount, decimals);
@@ -81,6 +91,17 @@ export const DataSection = () => {
 
   const fromAddress = isDeposit ? address : '';
   const toAddress = isDeposit ? '' : target;
+
+  // ENS hooks for the target address
+  const { data: ensName } = useEnsName({
+    address: isAddress(toAddress) ? (toAddress as `0x${string}`) : undefined,
+    chainId: 1, // Always use mainnet for ENS
+  });
+
+  const { data: ensAvatar } = useEnsAvatar({
+    name: ensName || undefined,
+    chainId: 1, // Always use mainnet for ENS
+  });
 
   // Use fresh quote fees for withdrawals, fallback to context fees if no quote
   const effectiveFeeBPS = isDeposit ? feeBPSForWithdraw : (quoteFeesBPS ?? feeBPSForWithdraw ?? 0);
@@ -139,10 +160,15 @@ export const DataSection = () => {
   }
   const netFeeFormatted = formatUnits(netFeeAmount, decimals);
   const netFeeUSD = getUsdBalance(price, netFeeFormatted, decimals);
-  const netFeeText = `${parseFloat(netFeeFormatted).toString()} ${symbol} (~$${parseFloat(netFeeUSD.replace('$', '')).toFixed(2)} USD)`;
+
+  // Net fee uses the same precision logic as fee breakdown
+  const netFeePrecision = getMaxDisplayPrecision(isStableAsset);
+  const netFeeNumeric = parseFloat(netFeeFormatted);
+  const netFeeDisplayValue = parseFloat(netFeeNumeric.toFixed(netFeePrecision)).toString();
+
+  const netFeeText = `${netFeeDisplayValue} ${symbol} (~$${parseFloat(netFeeUSD.replace('$', '')).toFixed(2)} USD)`;
   const netFeeTooltip = `${formatFullPrecision(netFeeAmount, decimals)} ${symbol}`;
 
-  const totalText = `~${amount.slice(0, 6)} ${symbol} (~$${parseFloat(amountUSD.replace('$', '')).toFixed(2)} USD)`;
   const totalAmountBN = parseUnits(amount, decimals);
   const totalTooltip = `${formatFullPrecision(totalAmountBN, decimals)} ${symbol}`;
 
@@ -171,16 +197,18 @@ export const DataSection = () => {
         <Row>
           <Label variant='body2'>To:</Label>
           <Value variant='body2'>
-            <Tooltip title={toAddress} placement='top'>
-              <span>
-                {toAddress && truncateAddress(toAddress)}
-                {!toAddress && 'New Pool Account'}
-              </span>
-            </Tooltip>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {ensAvatar && <Avatar src={ensAvatar} sx={{ width: 20, height: 20 }} />}
+              <Tooltip title={toAddress} placement='top'>
+                <span>
+                  {toAddress && (ensName || truncateAddress(toAddress))}
+                  {!toAddress && 'New Pool Account'}
+                </span>
+              </Tooltip>
+            </Box>
           </Value>
         </Row>
       </Stack>
-
       {actionType !== EventType.EXIT && (
         <Stack>
           <Row>
@@ -199,13 +227,14 @@ export const DataSection = () => {
               )}
             </Row>
           )}
-          <Row>
-            <Label variant='body2'>Value:</Label>
-            <Tooltip title={valueTooltip} placement='top'>
-              <Value variant='body2'>{valueText}</Value>
-            </Tooltip>
-          </Row>
-
+          {actionType !== EventType.WITHDRAWAL && (isQuoteValid || isExpired) && (
+            <Row>
+              <Label variant='body2'>Value:</Label>
+              <Tooltip title={valueTooltip} placement='top'>
+                <Value variant='body2'>{valueText}</Value>
+              </Tooltip>
+            </Row>
+          )}
           {/* Net Fee row with dropdown for withdrawals */}
           {actionType === EventType.WITHDRAWAL && isQuoteValid && quoteFeesBPS !== null && quoteBaseFeeBPS !== null && (
             <>
@@ -232,7 +261,7 @@ export const DataSection = () => {
                   <FeeBreakdown
                     feeBPS={quoteFeesBPS}
                     baseFeeBPS={quoteBaseFeeBPS}
-                    extraGasAmountETH={quoteExtraGasAmountETH}
+                    extraGasAmountETH={quoteState.extraGas ? quoteExtraGasAmountETH : null}
                     amount={amount}
                   />
                 </FeeBreakdownContainer>
@@ -242,12 +271,30 @@ export const DataSection = () => {
         </Stack>
       )}
 
-      <Row>
-        <TotalValueLabel variant='body2'>{actionType !== EventType.EXIT ? 'Total:' : 'Value:'}</TotalValueLabel>
-        <Tooltip title={totalTooltip} placement='top'>
-          <TotalValue variant='body2'>{totalText}</TotalValue>
-        </Tooltip>
-      </Row>
+      {/* Totals Section for Withdrawals */}
+      {actionType === EventType.WITHDRAWAL && (
+        <TotalsContainer>
+          <TotalBox>
+            <TotalLabel>Total Withdrawn</TotalLabel>
+            <Tooltip title={totalTooltip} placement='top'>
+              <TotalAmount>
+                {formatFeeDisplay(totalAmountBN, symbol, decimals, price, isStableAsset).displayText.split(' (~')[0]}
+              </TotalAmount>
+            </Tooltip>
+            <TotalUSD>${parseFloat(amountUSD.replace('$', '')).toFixed(2)}</TotalUSD>
+          </TotalBox>
+
+          <TotalBox>
+            <TotalLabel>Total Received</TotalLabel>
+            <Tooltip title={valueTooltip} placement='top'>
+              <TotalAmount>
+                {formatFeeDisplay(amountWithFeeBN, symbol, decimals, price, isStableAsset).displayText.split(' (~')[0]}
+              </TotalAmount>
+            </Tooltip>
+            <TotalUSD>${parseFloat(amountWithFeeUSD.replace('$', '')).toFixed(2)}</TotalUSD>
+          </TotalBox>
+        </TotalsContainer>
+      )}
     </Container>
   );
 };
@@ -288,14 +335,6 @@ const Label = styled(Typography)(({ theme }) => ({
 
 const Value = styled(Label)(() => ({
   fontWeight: 400,
-}));
-
-const TotalValueLabel = styled(Label)(({ theme }) => ({
-  color: theme.palette.grey[900],
-}));
-
-const TotalValue = styled(Value)(({ theme }) => ({
-  color: theme.palette.grey[900],
 }));
 
 const QuoteTimer = styled(Value)(({ theme }) => ({
@@ -353,3 +392,60 @@ const FeeBreakdownContainer = styled('div')({
   marginTop: '8px',
   marginLeft: '16px',
 });
+
+const TotalsContainer = styled('div')(({ theme }) => ({
+  display: 'flex',
+  marginTop: '24px',
+  justifyContent: 'space-between',
+  position: 'relative',
+  '&::after': {
+    content: '""',
+    position: 'absolute',
+    left: '50%',
+    top: '0',
+    bottom: '0',
+    width: '1px',
+    backgroundColor: theme.palette.divider,
+    transform: 'translateX(-50%)',
+  },
+}));
+
+const TotalBox = styled('div')(() => ({
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  padding: '0 0 16px',
+  gap: '4px',
+  backgroundColor: 'transparent',
+  minWidth: '208px',
+  height: '86px',
+}));
+
+const TotalLabel = styled(Typography)(({ theme }) => ({
+  fontFamily: 'IBM Plex Mono',
+  fontSize: '14px',
+  fontWeight: 400,
+  lineHeight: '18px',
+  color: theme.palette.text.secondary,
+  textAlign: 'center',
+}));
+
+const TotalAmount = styled(Typography)(({ theme }) => ({
+  fontFamily: 'IBM Plex Mono',
+  fontSize: '20px',
+  fontWeight: 700,
+  lineHeight: '26px',
+  color: theme.palette.text.primary,
+  textAlign: 'center',
+  cursor: 'help',
+}));
+
+const TotalUSD = styled(Typography)(({ theme }) => ({
+  fontFamily: 'IBM Plex Mono',
+  fontSize: '14px',
+  fontWeight: 400,
+  lineHeight: '18px',
+  color: theme.palette.text.secondary,
+  textAlign: 'center',
+}));

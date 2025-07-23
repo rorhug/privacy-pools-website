@@ -13,11 +13,21 @@ interface FeeBreakdownProps {
   amount: string;
 }
 
-const formatFeeDisplay = (
+const getMaxDisplayPrecision = (isStableAsset: boolean): number => {
+  // Stable assets (stablecoins and yield-bearing stablecoins) should have max 3 decimal places
+  if (isStableAsset) {
+    return 3;
+  }
+  // ETH and other tokens can show full precision (use high number)
+  return 18;
+};
+
+export const formatFeeDisplay = (
   feeAmount: bigint,
   symbol: string,
   decimals: number,
   price: number,
+  isStableAsset: boolean,
 ): { displayText: string; fullPrecision: string; usdValue: string } => {
   const feeInToken = formatUnits(feeAmount, decimals);
   const usdValue = getUsdBalance(price, feeInToken, decimals);
@@ -29,8 +39,17 @@ const formatFeeDisplay = (
   const usdNumeric = parseFloat(usdValue.replace('$', ''));
   const usdFormatted = `$${usdNumeric.toFixed(2)}`;
 
-  // Display text with reasonable precision, removing trailing zeros
-  const displayText = `${parseFloat(feeInToken).toString()} ${symbol} (~${usdFormatted} USD)`;
+  // Use the max precision based on asset type - no special cases needed
+  const displayPrecision = getMaxDisplayPrecision(isStableAsset);
+  const feeNumeric = parseFloat(feeInToken);
+
+  // For display, use precision based on asset type
+  const displayValue =
+    feeNumeric < Math.pow(10, -displayPrecision)
+      ? feeNumeric.toExponential(2)
+      : parseFloat(feeNumeric.toFixed(displayPrecision)).toString();
+
+  const displayText = `${displayValue} ${symbol} (~${usdFormatted} USD)`;
 
   return { displayText, fullPrecision, usdValue: usdFormatted };
 };
@@ -39,7 +58,10 @@ export const FeeBreakdown = ({ feeBPS, baseFeeBPS, extraGasAmountETH, amount }: 
   const {
     balanceBN: { symbol, decimals },
     price,
+    selectedPoolInfo,
   } = useChainContext();
+
+  const isStableAsset = selectedPoolInfo?.isStableAsset ?? false;
 
   // Guard against invalid inputs
   if (
@@ -74,9 +96,9 @@ export const FeeBreakdown = ({ feeBPS, baseFeeBPS, extraGasAmountETH, amount }: 
   // For now, we'll show the relaying cost as the difference between total and base fee
 
   // Format fees for display
-  const totalFee = formatFeeDisplay(totalFeeAmount, symbol, decimals, price);
-  const baseFee = formatFeeDisplay(baseFeeAmount, symbol, decimals, price);
-  const relayingCost = formatFeeDisplay(relayingCostAmount, symbol, decimals, price);
+  const totalFee = formatFeeDisplay(totalFeeAmount, symbol, decimals, price, isStableAsset);
+  const baseFee = formatFeeDisplay(baseFeeAmount, symbol, decimals, price, isStableAsset);
+  const relayingCost = formatFeeDisplay(relayingCostAmount, symbol, decimals, price, isStableAsset);
 
   // Extra gas amount (convert from wei to ETH)
   const extraGasETH = extraGasAmountETH ? parseFloat(formatUnits(BigInt(extraGasAmountETH), 18)) : null;
@@ -165,24 +187,23 @@ export const FeeBreakdown = ({ feeBPS, baseFeeBPS, extraGasAmountETH, amount }: 
           </Tooltip>
         </FeeRow>
 
-        {/* Native Gas Airdrop (only show if extraGasAmountETH exists) */}
+        {/* Gas token received (only show if extraGasAmountETH exists) */}
         {extraGasETH && extraGasUSD && (
           <>
-            <FeeDivider />
             <FeeRow>
-              <FeeLabel>Native Gas Airdrop:</FeeLabel>
+              <FeeLabel>Gas token received:</FeeLabel>
               <Tooltip
                 title={
                   <TooltipContent>
                     <div>Amount: {extraGasETHFormatted} ETH</div>
                     <div>USD Value: ~${extraGasUSD}</div>
-                    <div>This ETH will be sent to your withdrawal address to cover gas fees</div>
+                    <div>This amount is deducted from your withdrawal to provide ETH for gas fees</div>
                   </TooltipContent>
                 }
                 placement='top'
               >
-                <FeeValue positive>
-                  +{extraGasETHFormatted} ETH (~${extraGasUSD} USD)
+                <FeeValue negative>
+                  -0.001 {symbol} (~${extraGasUSD})
                 </FeeValue>
               </Tooltip>
             </FeeRow>
@@ -222,11 +243,11 @@ const FeeLabel = styled(Typography)(({ theme }) => ({
 }));
 
 const FeeValue = styled(Typography, {
-  shouldForwardProp: (prop) => prop !== 'positive',
-})<{ positive?: boolean }>(({ theme, positive }) => ({
+  shouldForwardProp: (prop) => prop !== 'positive' && prop !== 'negative',
+})<{ positive?: boolean; negative?: boolean }>(({ theme, positive, negative }) => ({
   fontSize: '14px',
   fontWeight: 600,
-  color: positive ? theme.palette.success.main : theme.palette.text.primary,
+  color: positive ? theme.palette.success.main : negative ? '#4caf50' : theme.palette.text.primary,
   cursor: 'help',
   '&:hover': {
     opacity: 0.8,
