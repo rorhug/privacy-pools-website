@@ -53,8 +53,18 @@ const StatsPage = () => {
         <Typography variant='h3' component='h1' gutterBottom>
           Privacy Pools Statistics
         </Typography>
-        <Typography variant='h6' color='text.secondary'>
+        {/* <Typography variant='h6' color='text.secondary'>
           Real-time analytics and insights from Dune Analytics
+        </Typography> */}
+        <Typography variant='body1' color='text.secondary'>
+          Full dashboard by{' '}
+          <a href='https://x.com/Jondar_eth' target='_blank' rel='noopener noreferrer'>
+            Jondar
+          </a>{' '}
+          on{' '}
+          <a href='https://dune.com/jondar/0xbows-privacy-pools' target='_blank' rel='noopener noreferrer'>
+            Dune Analytics
+          </a>
         </Typography>
       </Box>
 
